@@ -14,3 +14,4 @@ scipy
 speechrecognition
 gtts
 gdown
+librosa
