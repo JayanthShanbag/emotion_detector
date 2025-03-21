@@ -2,6 +2,7 @@ gunicorn
 Flask
 flask-cors
 torch
+torchaudio  # 🔹 Ensure torchaudio is installed for handling audio with PyTorch
 soundfile
 transformers
 cohere
@@ -15,3 +16,5 @@ speechrecognition
 gtts
 gdown
 librosa
+pydub  # 🔹 Needed for handling audio conversion (WAV/MP3)
+ffmpeg-python  # 🔹 Needed for audio processing (TTS or speech recognition)
