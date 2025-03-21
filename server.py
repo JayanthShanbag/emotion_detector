@@ -1,96 +1,76 @@
-import torch
-from transformers import Wav2Vec2Processor, Wav2Vec2ForSequenceClassification
-from flask import Flask, request, jsonify
-import librosa
 import os
+import torch
+import librosa
+import soundfile as sf
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2Processor
 import cohere
+from dotenv import load_dotenv
 
-# 🔹 Initialize Cohere API
-COHERE_API_KEY = os.getenv("COHERE_API_KEY")  # Use Render environment variable
-co = cohere.Client(COHERE_API_KEY)
+# Load environment variables
+load_dotenv()
 
-# 🔹 Define Cache & Model Paths
-CACHE_DIR = "./transformers_cache"
+# Initialize Flask app
+app = Flask(__name__)
+CORS(app)
+
+# Model and API settings
 MODEL_NAME = "facebook/wav2vec2-base"
-MODEL_DIR = "./models/wav2vec2-base"
+CACHE_DIR = "./transformers_cache"
 
-# 🔹 Set Hugging Face Cache Directory
+# Set cache directory to avoid excessive downloads
 os.environ["TRANSFORMERS_CACHE"] = CACHE_DIR
 
-# 🔹 Ensure model is downloaded & cached
-if not os.path.exists(MODEL_DIR):
-    from transformers import AutoModelForSequenceClassification, AutoProcessor
-    print("Downloading model...")
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
-    processor = AutoProcessor.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
-    
-    model.save_pretrained(MODEL_DIR)
-    processor.save_pretrained(MODEL_DIR)
-    print("Model downloaded & saved.")
+# Load Wav2Vec2 model and processor
+processor = Wav2Vec2Processor.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
+model = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_NAME, cache_dir=CACHE_DIR)
+model.eval()
 
-# 🔹 Load cached model
-print("Loading cached model...")
-model = Wav2Vec2ForSequenceClassification.from_pretrained(MODEL_DIR)
-processor = Wav2Vec2Processor.from_pretrained(MODEL_DIR)
-print("Model loaded successfully.")
+# Check if CUDA is available
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model.to(device)
 
-# 🔹 Initialize Flask app
-app = Flask(__name__)
+# Initialize Cohere API
+cohere_api_key = os.getenv("COHERE_API_KEY")
+cohere_client = cohere.Client(cohere_api_key) if cohere_api_key else None
 
-# 🎭 Emotion Detection Route
 @app.route("/predict", methods=["POST"])
 def predict():
+    """Handles emotion detection from audio"""
     try:
         file = request.files["file"]
-        if not file:
-            return jsonify({"error": "No file uploaded"}), 400
+        audio, sr = librosa.load(file, sr=16000)
+        input_values = processor(audio, sampling_rate=sr, return_tensors="pt").input_values
+        input_values = input_values.to(device)
 
-        # Load audio
-        y, sr = librosa.load(file, sr=16000)
-
-        # Process input
-        inputs = processor(y, sampling_rate=sr, return_tensors="pt", padding=True)
-        
-        # Get predictions
         with torch.no_grad():
-            logits = model(**inputs).logits
-        predicted_label = torch.argmax(logits, dim=-1).item()
+            logits = model(input_values).logits
+            predicted_label = torch.argmax(logits, dim=-1).item()
 
-        # Return response
-        return jsonify({"emotion": predicted_label})
+        emotions = ["Neutral", "Happy", "Sad", "Angry", "Fearful", "Disgusted", "Surprised"]
+        emotion = emotions[predicted_label]
 
+        return jsonify({"emotion": emotion})
+    
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)})
 
-
-# 🤖 Cohere Chatbot Route
 @app.route("/chat", methods=["POST"])
 def chat():
+    """Handles chatbot responses with Cohere"""
+    if not cohere_client:
+        return jsonify({"error": "Cohere API key is missing"})
+
     try:
         data = request.json
-        user_message = data.get("message", "")
+        user_input = data.get("message", "")
 
-        if not user_message:
-            return jsonify({"error": "No message provided"}), 400
-
-        # Get response from Cohere API
-        response = co.generate(
-            model="command",  # or "command-light" for a lightweight version
-            prompt=user_message,
-            max_tokens=100
-        )
-
-        chatbot_reply = response.generations[0].text.strip()
-
-        return jsonify({"reply": chatbot_reply})
-
+        response = cohere_client.chat(user_input)
+        return jsonify({"response": response.text})
+    
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)})
 
-
-# 🔥 Run the server
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=5000)
