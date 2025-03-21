@@ -1,10 +1,9 @@
 import os
-import gdown  # Install with `pip install gdown`
+import io
+import torch
+import soundfile as sf
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import torch
-import io
-import soundfile as sf
 from transformers import Wav2Vec2Processor, Wav2Vec2ForSequenceClassification
 import cohere
 from dotenv import load_dotenv
@@ -16,27 +15,10 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# Google Drive file ID for the model
-GOOGLE_DRIVE_FILE_ID = "1jHqUsguayTcoyxW1Ckqu8k4uLIlEXzai"  # Replace this with your actual file ID
-
-MODEL_PATH = "my_trained_model.pth"
-
-# Function to download model from Google Drive
-def download_model():
-    if not os.path.exists(MODEL_PATH):  # Only download if not already present
-        print("🔽 Downloading model from Google Drive...")
-        gdown.download(f"https://drive.google.com/uc?id={GOOGLE_DRIVE_FILE_ID}", MODEL_PATH, quiet=False)
-        print("✅ Model downloaded successfully!")
-
-# Ensure model is available
-download_model()
-
-# Load the trained emotion detection model
+# Load pretrained model (No quantization, using Hugging Face model directly)
 processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base")
-model = Wav2Vec2ForSequenceClassification.from_pretrained(
-    "facebook/wav2vec2-base", num_labels=7, state_dict=torch.load(MODEL_PATH, map_location=torch.device("cpu"))
-)
-model.eval()  # Set model to evaluation mode
+model = Wav2Vec2ForSequenceClassification.from_pretrained("facebook/wav2vec2-base", num_labels=7)
+model.eval()
 
 # Emotion label mapping
 LABEL_MAP = {0: "neutral", 1: "happy", 2: "sad", 3: "angry", 4: "fearful", 5: "disgust", 6: "surprised"}
@@ -64,7 +46,7 @@ def predict_emotion():
 # Initialize Cohere API
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")  # Use environment variable
 if not COHERE_API_KEY:
-    raise ValueError("❌ Cohere API key missing. Check .env file.")
+    raise ValueError("❌ Cohere API key missing. Check Render env variables.")
 
 co = cohere.Client(COHERE_API_KEY)
 
@@ -88,4 +70,4 @@ def get_cohere_response():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5001)  # Allow external access
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))  # Render assigns a port dynamically
