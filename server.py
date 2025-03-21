@@ -17,7 +17,8 @@ app = Flask(__name__)
 CORS(app)
 
 # Google Drive file ID for the model
-GOOGLE_DRIVE_FILE_ID = "https://drive.google.com/file/d/1jHqUsguayTcoyxW1Ckqu8k4uLIlEXzai/view?usp=sharing"  # Replace this with your actual file ID
+GOOGLE_DRIVE_FILE_ID = "1jHqUsguayTcoyxW1Ckqu8k4uLIlEXzai"  # Replace this with your actual file ID
+
 MODEL_PATH = "my_trained_model.pth"
 
 # Function to download model from Google Drive
